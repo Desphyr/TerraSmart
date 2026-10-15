@@ -1,16 +1,24 @@
-# React + Vite
+# TerraSmart Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Antarmuka React untuk autentikasi, dashboard petani, pengelolaan lahan, logbook, keuangan, prakiraan cuaca, kalender tanam, harga referensi, notifikasi, dan dashboard admin.
 
-Currently, two official plugins are available:
+## Menjalankan aplikasi
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+npm install
+npm run dev
+```
 
-## React Compiler
+Secara default frontend menggunakan API di `http://localhost:5000/api`. Untuk alamat backend lain, buat file `.env` di direktori `Frontend`:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```env
+VITE_API_URL=http://localhost:5000/api
+```
 
-## Expanding the ESLint configuration
+## Integrasi
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Token sesi disimpan di `localStorage` dan divalidasi melalui `GET /users/me`; route admin dan petani dibatasi menurut role dari API.
+- Data lahan, aktivitas, dan transaksi memakai endpoint CRUD backend yang tersedia.
+- Prakiraan Open-Meteo menggunakan latitude dan longitude dari lahan terpilih. Data kebutuhan pupuk, air, musim, dan ambang hujan berada di `src/data/crops.json`.
+- Harga pasar ditampilkan sebagai data ilustrasi karena backend belum menyediakan endpoint harga; halaman juga memberi label yang jelas.
+- Dashboard admin hanya memvalidasi endpoint `GET /admin/ping`. Statistik admin belum tersedia dari backend.
