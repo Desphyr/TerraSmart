@@ -8,6 +8,10 @@ export const errorHandler = (err, req, res, next) => {
   let message = err.message
 
   if (err.name === 'ValidationError') status = 400
+  if (err.name === 'CastError') {
+  status = 400
+  message = 'Invalid ID format'
+  }
   if (err.code === 11000) {
     status = 400
     message = 'Data already exists (duplicate value)'
