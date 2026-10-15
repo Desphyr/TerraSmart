@@ -22,7 +22,12 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const isAdmin = user?.role === 'admin'
   const links = isAdmin
-    ? [{ to: '/admin', label: 'Dashboard admin', icon: FiUsers, end: true }]
+    ? [
+      { to: '/admin', label: 'Ringkasan', icon: FiGrid, end: true },
+      { to: '/admin/users', label: 'Kelola pengguna', icon: FiUsers },
+      { to: '/admin/farms', label: 'Semua lahan', icon: FiFeather },
+      { to: '/admin/activities', label: 'Semua aktivitas', icon: FiActivity },
+    ]
     : farmerLinks
 
   function signOut() {

@@ -1,0 +1,8 @@
+[
+  { "id": "beras", "commodity": "Beras", "price": 15000, "previousPrice": 14800, "minPrice": 13500, "maxPrice": 16500, "unit": "kg" },
+  { "id": "cabai-rawit", "commodity": "Cabai Rawit", "price": 58000, "previousPrice": 62000, "minPrice": 45000, "maxPrice": 75000, "unit": "kg" },
+  { "id": "bawang-merah", "commodity": "Bawang Merah", "price": 38000, "previousPrice": 37500, "minPrice": 30000, "maxPrice": 48000, "unit": "kg" },
+  { "id": "bawang-putih", "commodity": "Bawang Putih", "price": 42000, "previousPrice": 42000, "minPrice": 35000, "maxPrice": 50000, "unit": "kg" },
+  { "id": "jagung", "commodity": "Jagung", "price": 6500, "previousPrice": 6400, "minPrice": 5500, "maxPrice": 7500, "unit": "kg" },
+  { "id": "kedelai", "commodity": "Kedelai", "price": 12500, "previousPrice": 12800, "minPrice": 11000, "maxPrice": 14500, "unit": "kg" }
+]

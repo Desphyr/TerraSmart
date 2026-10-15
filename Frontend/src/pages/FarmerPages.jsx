@@ -2,11 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 import { Link } from 'react-router-dom'
 import {
   FiActivity, FiArrowDownRight, FiArrowRight, FiArrowUpRight, FiCalendar, FiCheck,
-  FiCloudRain, FiDroplet, FiEdit2, FiFeather, FiMapPin, FiPlus, FiRefreshCw,
-  FiTrash2, FiTrendingUp, FiWind, FiX,
+  FiCloudRain, FiDroplet, FiEdit2, FiFeather, FiMapPin, FiPlus,
+  FiMinus, FiRefreshCw, FiTrash2, FiTrendingUp, FiWind, FiX,
 } from 'react-icons/fi'
 import crops from '../data/crops.json'
 import api, { getErrorMessage } from '../lib/api'
+import FarmLocationPicker from '../components/FarmLocationPicker'
 
 const ProfitChart = lazy(() => import('./ProfitChart'))
 const currency = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 })
@@ -39,16 +40,29 @@ function useFarms() {
   const [farms, setFarms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   useEffect(() => {
+    let active = true
     api.get('/farms')
       .then(({ data }) => {
+        if (!active) return
+        if (!Array.isArray(data)) throw new Error('Respons daftar lahan tidak valid.')
         setFarms(data)
         setError('')
       })
-      .catch((loadError) => setError(getErrorMessage(loadError)))
-      .finally(() => setLoading(false))
+      .catch((loadError) => {
+        if (active) setError(getErrorMessage(loadError))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [attempt])
+  const retry = useCallback(() => {
+    setLoading(true)
+    setAttempt((current) => current + 1)
   }, [])
-  return { farms, setFarms, loading, error, setError }
+  return { farms, setFarms, loading, error, setError, retry }
 }
 
 function StatCard({ label, value, hint, icon: Icon, tone = 'green' }) {
@@ -108,16 +122,35 @@ export function FarmerDashboard() {
 export function FarmManagement() {
   const { farms, setFarms, loading, error, setError } = useFarms()
   const [editing, setEditing] = useState(null)
+  const [farmLocation, setFarmLocation] = useState({ latitude: '', longitude: '', locationName: '' })
   const [submitting, setSubmitting] = useState(false)
   const [notice, setNotice] = useState('')
+
+  function openFarmForm(farm = {}) {
+    setFarmLocation({
+      latitude: farm.latitude ?? '',
+      longitude: farm.longitude ?? '',
+      locationName: farm.locationName || '',
+    })
+    setEditing(farm)
+  }
 
   async function saveFarm(event) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const payload = {
       name: form.get('name').trim(), cropType: form.get('cropType').trim(),
-      locationName: form.get('locationName').trim(),
-      area: Number(form.get('area')), latitude: Number(form.get('latitude')), longitude: Number(form.get('longitude')),
+      locationName: farmLocation.locationName.trim(),
+      area: Number(form.get('area')),
+      latitude: Number(farmLocation.latitude),
+      longitude: Number(farmLocation.longitude),
+    }
+    if (farmLocation.latitude === '' || farmLocation.longitude === ''
+      || !Number.isFinite(payload.latitude) || !Number.isFinite(payload.longitude)
+      || payload.latitude < -90 || payload.latitude > 90
+      || payload.longitude < -180 || payload.longitude > 180) {
+      setError('Masukkan koordinat yang valid atau pilih lokasi melalui peta sebelum menyimpan lahan.')
+      return
     }
     setSubmitting(true)
     setError('')
@@ -151,10 +184,34 @@ export function FarmManagement() {
 
   return (
     <>
-      <Heading eyebrow="MANAJEMEN LAHAN" title="Lahan saya" description="Kelola data dan titik koordinat setiap lahan pertanian." action={<button className="button button-primary" onClick={() => setEditing({})}><FiPlus /> Tambah lahan</button>} />
+      <Heading eyebrow="MANAJEMEN LAHAN" title="Lahan saya" description="Kelola data dan titik koordinat setiap lahan pertanian." action={<button className="button button-primary" onClick={() => openFarmForm()}><FiPlus /> Tambah lahan</button>} />
       <Notice>{error}</Notice><Notice tone="success" onClose={() => setNotice('')}>{notice}</Notice>
-      {loading ? <Loading /> : farms.length ? <div className="farm-card-grid">{farms.map((farm) => <article className="farm-card" key={farm._id}><div className="farm-card-art"><span className="farm-art-sun" /><span className="farm-art-hill hill-one" /><span className="farm-art-hill hill-two" /><span className="farm-art-leaf"><FiFeather /></span><div className="farm-card-actions"><button className="icon-button" aria-label={`Edit ${farm.name}`} onClick={() => setEditing(farm)}><FiEdit2 /></button><button className="icon-button danger-icon" aria-label={`Hapus ${farm.name}`} onClick={() => removeFarm(farm)}><FiTrash2 /></button></div></div><div className="farm-card-body"><div className="farm-card-type">{farm.cropType}</div><h2>{farm.name}</h2><p><FiMapPin /> {farm.locationName || `${farm.latitude}, ${farm.longitude}`}</p><div className="farm-card-meta"><span><small>LUAS LAHAN</small><strong>{number.format(farm.area)} ha</strong></span><span><small>KOORDINAT</small><strong>{Number(farm.latitude).toFixed(4)}, {Number(farm.longitude).toFixed(4)}</strong></span></div><Link to="/app/weather" className="text-link">Lihat cuaca lahan <FiArrowRight /></Link></div></article>)}</div> : <section className="panel"><Empty title="Belum ada lahan terdaftar" text="Tambahkan lahan untuk mulai mencatat aktivitas dan memantau cuacanya." action={<button className="button button-primary" onClick={() => setEditing({})}><FiPlus /> Tambah lahan</button>} /></section>}
-      {editing && <Modal title={editing._id ? 'Edit data lahan' : 'Tambah lahan baru'} onClose={() => setEditing(null)}><form className="modal-form" onSubmit={saveFarm}><label className="field-label">Nama lahan<input name="name" required defaultValue={editing.name || ''} placeholder="Contoh: Sawah Utara" /></label><div className="form-grid"><label className="field-label">Jenis tanaman<input name="cropType" required defaultValue={editing.cropType || ''} placeholder="Contoh: Padi" /></label><label className="field-label">Luas (hektare)<input name="area" type="number" min="0.01" step="0.01" required defaultValue={editing.area || ''} placeholder="1.5" /></label></div><label className="field-label">Nama lokasi<input name="locationName" defaultValue={editing.locationName || ''} placeholder="Desa, kabupaten" /></label><div className="form-grid"><label className="field-label">Latitude<input name="latitude" type="number" step="any" min="-90" max="90" required defaultValue={editing.latitude ?? ''} placeholder="-7.2575" /></label><label className="field-label">Longitude<input name="longitude" type="number" step="any" min="-180" max="180" required defaultValue={editing.longitude ?? ''} placeholder="112.7521" /></label></div><p className="form-hint"><FiMapPin /> Koordinat ini digunakan untuk prakiraan cuaca spesifik lahan.</p><div className="modal-actions"><button className="button button-quiet" type="button" onClick={() => setEditing(null)}>Batal</button><button className="button button-primary" disabled={submitting}>{submitting ? 'Menyimpan...' : 'Simpan lahan'}</button></div></form></Modal>}
+      {loading ? <Loading /> : farms.length ? <div className="farm-card-grid">{farms.map((farm) => <article className="farm-card" key={farm._id}><div className="farm-card-art"><span className="farm-art-sun" /><span className="farm-art-hill hill-one" /><span className="farm-art-hill hill-two" /><span className="farm-art-leaf"><FiFeather /></span><div className="farm-card-actions"><button className="icon-button" aria-label={`Edit ${farm.name}`} onClick={() => openFarmForm(farm)}><FiEdit2 /></button><button className="icon-button danger-icon" aria-label={`Hapus ${farm.name}`} onClick={() => removeFarm(farm)}><FiTrash2 /></button></div></div><div className="farm-card-body"><div className="farm-card-type">{farm.cropType}</div><h2>{farm.name}</h2><p><FiMapPin /> {farm.locationName || `${farm.latitude}, ${farm.longitude}`}</p><div className="farm-card-meta"><span><small>LUAS LAHAN</small><strong>{number.format(farm.area)} ha</strong></span><span><small>KOORDINAT</small><strong>{Number(farm.latitude).toFixed(4)}, {Number(farm.longitude).toFixed(4)}</strong></span></div><Link to="/app/weather" className="text-link">Lihat cuaca lahan <FiArrowRight /></Link></div></article>)}</div> : <section className="panel"><Empty title="Belum ada lahan terdaftar" text="Tambahkan lahan untuk mulai mencatat aktivitas dan memantau cuacanya." action={<button className="button button-primary" onClick={() => openFarmForm()}><FiPlus /> Tambah lahan</button>} /></section>}
+      {editing && <Modal title={editing._id ? 'Edit data lahan' : 'Tambah lahan baru'} onClose={() => setEditing(null)}>
+        <form className="modal-form" onSubmit={saveFarm}>
+          <label className="field-label">Nama lahan<input name="name" required defaultValue={editing.name || ''} placeholder="Contoh: Sawah Utara" /></label>
+          <div className="form-grid">
+            <label className="field-label">Jenis tanaman<input name="cropType" required defaultValue={editing.cropType || ''} placeholder="Contoh: Padi" /></label>
+            <label className="field-label">Luas (hektare)<input name="area" type="number" min="0.01" step="0.01" required defaultValue={editing.area || ''} placeholder="1.5" /></label>
+          </div>
+          <label className="field-label">Nama lokasi
+            <input name="locationName" value={farmLocation.locationName} onChange={(event) => setFarmLocation((current) => ({ ...current, locationName: event.target.value }))} placeholder="Contoh: Sleman, Yogyakarta" />
+          </label>
+          <FarmLocationPicker key={editing._id || 'new-farm'} initialLocation={farmLocation} onChange={setFarmLocation} />
+          <div className="form-grid">
+            <label className="field-label">Latitude
+              <input name="latitude" type="number" step="any" min="-90" max="90" required value={farmLocation.latitude} onChange={(event) => setFarmLocation((current) => ({ ...current, latitude: event.target.value }))} placeholder="-7.2575" />
+            </label>
+            <label className="field-label">Longitude
+              <input name="longitude" type="number" step="any" min="-180" max="180" required value={farmLocation.longitude} onChange={(event) => setFarmLocation((current) => ({ ...current, longitude: event.target.value }))} placeholder="112.7521" />
+            </label>
+          </div>
+          <div className="modal-actions">
+            <button className="button button-quiet" type="button" onClick={() => setEditing(null)}>Batal</button>
+            <button className="button button-primary" disabled={submitting}>{submitting ? 'Menyimpan...' : 'Simpan lahan'}</button>
+          </div>
+        </form>
+      </Modal>}
     </>
   )
 }
@@ -296,92 +353,152 @@ export function Finance() {
   </>
 }
 
-const weatherDescription = (code) => {
-  if (code === 0) return 'Cerah'
-  if (code <= 3) return 'Berawan'
-  if (code <= 48) return 'Berkabut'
-  if (code <= 67) return 'Hujan'
-  if (code <= 77) return 'Salju'
-  if (code <= 82) return 'Hujan lokal'
-  if (code <= 86) return 'Hujan salju'
-  return 'Badai petir'
-}
-
 export function WeatherCalendar() {
-  const { farms, loading: farmsLoading } = useFarms()
+  const { farms, loading: farmsLoading, error: farmsError, retry: retryFarms } = useFarms()
   const [selectedId, setSelectedId] = useState('')
   const [weather, setWeather] = useState(null)
+  const [weatherRetry, setWeatherRetry] = useState(0)
   const [cropId, setCropId] = useState('')
   const selectedFarm = farms.find((farm) => farm._id === selectedId) || farms[0]
   const crop = crops.find((item) => item.id === cropId) || cropForName(selectedFarm?.cropType)
   const farmId = selectedFarm?._id
   const latitude = selectedFarm?.latitude
   const longitude = selectedFarm?.longitude
-  const loading = Boolean(farmId && weather?.farmId !== farmId)
-  const error = weather?.farmId === farmId ? weather.error : ''
-  const forecast = weather?.farmId === farmId ? weather.data : null
+  const requestKey = farmId ? `${farmId}:${latitude}:${longitude}` : ''
+  const loading = Boolean(requestKey && weather?.requestKey !== requestKey)
+    || Boolean(requestKey && weather?.requestKey === requestKey && weather.loading)
+  const error = weather?.requestKey === requestKey ? weather.error : ''
+  const forecast = weather?.requestKey === requestKey && !error ? weather.data : null
 
   useEffect(() => {
     if (!farmId) return
     const controller = new AbortController()
-    const params = new URLSearchParams({
-      latitude,
-      longitude,
-      daily: 'precipitation_sum,temperature_2m_max,temperature_2m_min,weather_code',
-      timezone: 'auto',
-      forecast_days: '7',
-    })
-    fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Layanan cuaca merespons ${response.status}.`)
-        return response.json()
-      })
-      .then((data) => setWeather({ farmId, data, error: '' }))
-      .catch((weatherError) => {
-        if (weatherError.name !== 'AbortError') setWeather({ farmId, data: null, error: weatherError.message || 'Prakiraan cuaca tidak dapat dimuat.' })
-      })
+    async function loadForecast() {
+      setWeather({ requestKey, data: null, error: '', loading: true })
+      try {
+        const coordinates = [Number(latitude), Number(longitude)]
+        if (latitude == null || longitude == null || latitude === '' || longitude === ''
+          || !coordinates.every(Number.isFinite)
+          || coordinates[0] < -90 || coordinates[0] > 90
+          || coordinates[1] < -180 || coordinates[1] > 180) {
+          throw new Error('Koordinat lahan tidak valid. Perbarui lokasi lahan terlebih dahulu.')
+        }
+        const { data } = await api.get('/weather/forecast', {
+          params: { latitude: coordinates[0], longitude: coordinates[1] },
+          signal: controller.signal,
+        })
+        if (!data || typeof data !== 'object') throw new Error('Respons layanan cuaca tidak valid.')
+        const forecastDays = data.forecast?.forecastday
+        if (!Array.isArray(forecastDays) || forecastDays.length === 0) {
+          throw new Error('Data prakiraan kosong atau format respons tidak lengkap.')
+        }
+        const days = forecastDays.slice(0, 3).map((forecastDay) => ({
+          date: forecastDay?.date,
+          rain: forecastDay?.day?.totalprecip_mm,
+          max: forecastDay?.day?.maxtemp_c,
+          min: forecastDay?.day?.mintemp_c,
+          condition: forecastDay?.day?.condition?.text,
+        }))
+        if (days.some((day) => typeof day.date !== 'string'
+          || !/^\d{4}-\d{2}-\d{2}$/.test(day.date)
+          || !Number.isFinite(new Date(`${day.date}T12:00:00`).getTime())
+          || ![day.rain, day.max, day.min].every((value) => typeof value === 'number' && Number.isFinite(value))
+          || typeof day.condition !== 'string' || !day.condition.trim())) {
+          throw new Error('Data prakiraan berisi nilai yang tidak valid.')
+        }
+        if (!controller.signal.aborted) setWeather({ requestKey, data: { days }, error: '', loading: false })
+      } catch (weatherError) {
+        if (!controller.signal.aborted && weatherError.name !== 'AbortError') {
+          setWeather({
+            requestKey,
+            data: null,
+            error: weatherError.message || 'Prakiraan cuaca tidak dapat dimuat.',
+            loading: false,
+          })
+        }
+      }
+    }
+    loadForecast()
     return () => controller.abort()
-  }, [farmId, latitude, longitude])
+  }, [farmId, latitude, longitude, requestKey, weatherRetry])
 
   const days = useMemo(() => {
-    if (!forecast?.daily) return []
-    const { time, precipitation_sum: rain, temperature_2m_max: max, temperature_2m_min: min, weather_code: codes } = forecast.daily
-    return time.map((date, index) => ({ date, rain: rain[index], max: max[index], min: min[index], code: codes[index] }))
+    return Array.isArray(forecast?.days) ? forecast.days : []
   }, [forecast])
-  const recommended = days.find((day) => day.rain < crop.heavyRainMm)
+  const recommended = days.find((day) => day.rain < (crop?.heavyRainMm ?? 10))
   const currentMonth = new Date().getMonth() + 1
-  const seasonIsSuitable = crop.seasonMonths.includes(currentMonth)
+  const seasonIsSuitable = crop?.seasonMonths?.includes(currentMonth) ?? false
 
   return <>
     <Heading eyebrow="CUACA & KALENDER TANAM" title="Rencanakan musim tanam" description="Prakiraan dihitung dari koordinat lahan terpilih, bukan lokasi umum perangkat." />
-    <Notice>{error}</Notice>
-    {farmsLoading ? <Loading /> : !farms.length ? <section className="panel"><Empty icon={FiCloudRain} title="Tambahkan lahan untuk melihat cuaca" text="Prakiraan cuaca akurat memerlukan koordinat dari data lahan Anda." action={<Link to="/app/farms" className="button button-primary"><FiPlus /> Tambah lahan</Link>} /></section> : <>
+    {farmsLoading ? <Loading /> : farmsError ? <section className="panel weather-fallback" role="alert"><div><strong>Lahan tidak dapat dimuat.</strong><p>Periksa koneksi aplikasi lalu coba lagi.</p></div><button className="button button-secondary" onClick={retryFarms}><FiRefreshCw /> Coba lagi</button></section> : !farms.length ? <section className="panel"><Empty icon={FiCloudRain} title="Tambahkan lahan untuk melihat cuaca" text="Prakiraan cuaca akurat memerlukan koordinat dari data lahan Anda." action={<Link to="/app/farms" className="button button-primary"><FiPlus /> Tambah lahan</Link>} /></section> : <>
       <section className="weather-controls panel"><div><span className="eyebrow">PILIH AREA PANTAUAN</span><h2>Cuaca berdasarkan lahan</h2><p>Data cuaca menggunakan koordinat yang tersimpan pada lahan.</p></div><label className="field-label">Lahan<select value={selectedFarm?._id || ''} onChange={(event) => setSelectedId(event.target.value)}>{farms.map((farm) => <option key={farm._id} value={farm._id}>{farm.name} · {farm.locationName || farm.cropType}</option>)}</select></label></section>
-      <div className="weather-location"><span className="weather-pin"><FiMapPin /></span><span><b>{selectedFarm?.name}</b><small>{selectedFarm?.locationName || 'Koordinat lahan'} · {Number(selectedFarm?.latitude).toFixed(4)}, {Number(selectedFarm?.longitude).toFixed(4)}</small></span><span className="weather-source">Open-Meteo · 7 hari</span></div>
-      {loading ? <section className="panel"><Loading label="Memuat prakiraan cuaca untuk lahan..." /></section> : days.length > 0 && <div className="forecast-grid">{days.map((day, index) => <article className={`forecast-card ${index === 0 ? 'forecast-today' : ''}`} key={day.date}><span className="forecast-day">{index === 0 ? 'Hari ini' : new Intl.DateTimeFormat('id-ID', { weekday: 'short' }).format(new Date(`${day.date}T12:00:00`))}</span><strong>{shortDate(`${day.date}T12:00:00`)}</strong><span className="forecast-icon">{day.rain >= crop.heavyRainMm ? <FiCloudRain /> : <FiWind />}</span><span className="forecast-condition">{weatherDescription(day.code)}</span><span className="forecast-temp">{Math.round(day.max)}° <small>/ {Math.round(day.min)}°</small></span><span className={`rain-value ${day.rain >= crop.heavyRainMm ? 'rain-heavy' : ''}`}><FiDroplet /> {number.format(day.rain)} mm</span></article>)}</div>}
+      <div className="weather-location"><span className="weather-pin"><FiMapPin /></span><span><b>{selectedFarm?.name}</b><small>{selectedFarm?.locationName || 'Koordinat lahan'} · {Number(selectedFarm?.latitude).toFixed(4)}, {Number(selectedFarm?.longitude).toFixed(4)}</small></span><span className="weather-source">WeatherAPI · 3 hari</span></div>
+      {loading ? <section className="panel"><Loading label="Memuat prakiraan cuaca untuk lahan..." /></section> : error || days.length === 0 ? <section className="panel weather-fallback" role="alert"><span className="panel-icon"><FiCloudRain /></span><div><strong>{error || 'Data prakiraan belum tersedia.'}</strong><p>Periksa koneksi internet atau koordinat lahan, lalu coba muat ulang prakiraan.</p></div><button className="button button-secondary" onClick={() => { setWeather(null); setWeatherRetry((current) => current + 1) }}><FiRefreshCw /> Coba lagi</button></section> : <div className="forecast-grid">{days.map((day, index) => <article className={`forecast-card ${index === 0 ? 'forecast-today' : ''}`} key={day.date}><span className="forecast-day">{index === 0 ? 'Hari ini' : new Intl.DateTimeFormat('id-ID', { weekday: 'short' }).format(new Date(`${day.date}T12:00:00`))}</span><strong>{shortDate(`${day.date}T12:00:00`)}</strong><span className="forecast-icon">{day.rain >= (crop?.heavyRainMm ?? 10) ? <FiCloudRain /> : <FiWind />}</span><span className="forecast-condition">{day.condition}</span><span className="forecast-temp">{Math.round(day.max)}° <small>/ {Math.round(day.min)}°</small></span><span className={`rain-value ${day.rain >= (crop?.heavyRainMm ?? 10) ? 'rain-heavy' : ''}`}><FiDroplet /> {number.format(day.rain)} mm</span></article>)}</div>}
       <div className="calendar-grid">
-        <section className="panel planting-panel"><div className="panel-heading"><div><span className="eyebrow">REKOMENDASI JADWAL</span><h2>Waktu tanam yang disarankan</h2></div><span className="panel-icon"><FiCalendar /></span></div><label className="field-label crop-select">Jenis tanaman<select value={cropId || crop.id} onChange={(event) => setCropId(event.target.value)}>{crops.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>{loading ? <Loading /> : recommended ? <div className="recommendation"><span className="recommendation-check"><FiCheck /></span><div><span>Hari terdekat dengan prakiraan tidak hujan lebat</span><strong>{new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${recommended.date}T12:00:00`))}</strong><small>Curah hujan {number.format(recommended.rain)} mm · Ambang {crop.name}: {crop.heavyRainMm} mm/hari</small></div></div> : <div className="recommendation recommendation-caution"><span className="recommendation-check"><FiCloudRain /></span><div><strong>Belum ada hari ideal dalam 7 hari</strong><small>Pertimbangkan menunda penanaman atau cek kembali prakiraan mendatang.</small></div></div>}<p className={`season-note ${seasonIsSuitable ? 'season-good' : ''}`}><FiCalendar /> {seasonIsSuitable ? 'Bulan ini termasuk rekomendasi musim tanam' : 'Bulan ini di luar rekomendasi musim tanam umum'} untuk {crop.name}. Sesuaikan dengan kondisi lokal.</p></section>
-        <section className="panel calculator-panel"><div className="panel-heading"><div><span className="eyebrow">KALKULATOR KEBUTUHAN</span><h2>Estimasi input lahan</h2></div><span className="panel-icon"><FiDroplet /></span></div><label className="field-label">Hitung untuk tanaman<select value={cropId || crop.id} onChange={(event) => setCropId(event.target.value)}>{crops.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div className="calculator-results"><div><span className="calculator-result-icon"><FiFeather /></span><span><small>Kebutuhan pupuk</small><strong>{number.format(Number(selectedFarm?.area || 0) * crop.fertilizerKgPerHectare)} <em>kg</em></strong></span></div><div><span className="calculator-result-icon water-icon"><FiDroplet /></span><span><small>Kebutuhan air</small><strong>{number.format(Number(selectedFarm?.area || 0) * crop.waterM3PerHectare)} <em>m³</em></strong></span></div></div><p className="calculator-note">Rumus: luas lahan ({number.format(selectedFarm?.area || 0)} ha) × kebutuhan per hektare. Estimasi umum; sesuaikan dengan rekomendasi penyuluh dan kondisi tanah.</p></section>
+        <section className="panel planting-panel"><div className="panel-heading"><div><span className="eyebrow">REKOMENDASI JADWAL</span><h2>Waktu tanam yang disarankan</h2></div><span className="panel-icon"><FiCalendar /></span></div><label className="field-label crop-select">Jenis tanaman<select value={cropId || crop.id} onChange={(event) => setCropId(event.target.value)}>{crops.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>{loading ? <Loading /> : error || days.length === 0 ? <div className="recommendation recommendation-caution"><span className="recommendation-check"><FiCloudRain /></span><div><strong>Rekomendasi belum tersedia</strong><small>Muat prakiraan cuaca yang valid terlebih dahulu.</small></div></div> : recommended ? <div className="recommendation"><span className="recommendation-check"><FiCheck /></span><div><span>Hari terdekat dengan prakiraan tidak hujan lebat</span><strong>{new Intl.DateTimeFormat('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${recommended.date}T12:00:00`))}</strong><small>Curah hujan {number.format(recommended.rain)} mm · Ambang {crop.name}: {crop.heavyRainMm} mm/hari</small></div></div> : <div className="recommendation recommendation-caution"><span className="recommendation-check"><FiCloudRain /></span><div><strong>Belum ada hari ideal dalam 3 hari</strong><small>Pertimbangkan menunda penanaman atau cek kembali prakiraan mendatang.</small></div></div>}<p className={`season-note ${seasonIsSuitable ? 'season-good' : ''}`}><FiCalendar /> {seasonIsSuitable ? 'Bulan ini termasuk rekomendasi musim tanam' : 'Bulan ini di luar rekomendasi musim tanam umum'} untuk {crop.name}. Sesuaikan dengan kondisi lokal.</p></section>
+        <section className="panel calculator-panel"><div className="panel-heading"><div><span className="eyebrow">KALKULATOR KEBUTUHAN</span><h2>Estimasi input lahan</h2></div><span className="panel-icon"><FiDroplet /></span></div><label className="field-label">Hitung untuk tanaman<select value={cropId || crop.id} onChange={(event) => setCropId(event.target.value)}>{crops.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><div className="calculator-results"><div><span className="calculator-result-icon"><FiFeather /></span><span><small>Kebutuhan pupuk</small><strong>{number.format(Number(selectedFarm?.area || 0) * (crop?.fertilizerKgPerHectare || 0))} <em>kg</em></strong></span></div><div><span className="calculator-result-icon water-icon"><FiDroplet /></span><span><small>Kebutuhan air</small><strong>{number.format(Number(selectedFarm?.area || 0) * (crop?.waterM3PerHectare || 0))} <em>m³</em></strong></span></div></div><p className="calculator-note">Rumus: luas lahan ({number.format(selectedFarm?.area || 0)} ha) × kebutuhan per hektare. Estimasi umum; sesuaikan dengan rekomendasi penyuluh dan kondisi tanah.</p></section>
       </div>
     </>}
   </>
 }
 
-const MARKET_SAMPLE = [
-  { crop: 'Gabah kering panen', unit: 'kg', price: 6800, change: 2.4 },
-  { crop: 'Jagung pipilan', unit: 'kg', price: 5200, change: -1.2 },
-  { crop: 'Kedelai lokal', unit: 'kg', price: 12500, change: 0.8 },
-  { crop: 'Cabai merah keriting', unit: 'kg', price: 38500, change: 6.1 },
-  { crop: 'Tomat', unit: 'kg', price: 9500, change: -3.4 },
-]
-
 export function Market() {
+  const [prices, setPrices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    api.get('/market-prices')
+      .then(({ data }) => {
+        if (!Array.isArray(data?.prices)) throw new Error('Format data harga pasar tidak valid.')
+        if (active) {
+          setPrices(data.prices)
+          setError('')
+        }
+      })
+      .catch((requestError) => {
+        if (active) setError(getErrorMessage(requestError))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [attempt])
+
+  const retry = () => {
+    setLoading(true)
+    setAttempt((current) => current + 1)
+  }
+
   return <>
-    <Heading eyebrow="INFORMASI PASAR" title="Harga pasar" description="Referensi harga komoditas untuk membantu Anda merencanakan penjualan." />
-    <div className="notice notice-info"><FiActivity /> Harga di bawah ini merupakan <strong>data contoh</strong>, bukan harga pasar real-time. Backend belum menyediakan sumber harga pasar.</div>
+    <Heading eyebrow="INFORMASI PASAR" title="Harga pasar" description="Pantau harga referensi komoditas pertanian untuk membantu merencanakan penjualan." />
     <section className="market-banner"><div className="market-banner-pattern"><span /><span /><span /></div><span className="eyebrow eyebrow-light">WAWASAN PASAR</span><h2>Panen yang baik dimulai<br />dari keputusan yang tepat.</h2><p>Pantau komoditas dan rencanakan waktu jual sesuai kondisi pasar di wilayah Anda.</p></section>
-    <section className="panel table-panel market-table"><div className="table-toolbar"><div><h2>Referensi komoditas</h2><span>Angka ilustrasi · tidak diperbarui otomatis</span></div><span className="sample-tag">CONTOH DATA</span></div><div className="table-scroll"><table><thead><tr><th>KOMODITAS</th><th>HARGA REFERENSI</th><th>PERUBAHAN (CONTOH)</th><th>SATUAN</th></tr></thead><tbody>{MARKET_SAMPLE.map((row) => <tr key={row.crop}><td><strong>{row.crop}</strong></td><td><strong>{currency.format(row.price)}</strong></td><td className={row.change >= 0 ? 'money-positive' : 'money-negative'}>{row.change >= 0 ? <FiArrowUpRight /> : <FiArrowDownRight />} {Math.abs(row.change)}%</td><td>per {row.unit}</td></tr>)}</tbody></table></div></section>
-    <div className="market-footnote"><FiMapPin /><span>Harga aktual dapat berbeda menurut lokasi, kualitas, dan waktu. Verifikasi melalui pasar atau koperasi setempat sebelum mengambil keputusan.</span></div>
+    <section className="panel table-panel market-table">
+      <div className="table-toolbar"><div><h2>Harga komoditas</h2><span>Rupiah per kilogram</span></div></div>
+      {error && <div className="notice" role="alert"><span>{error}</span><button className="button button-quiet" onClick={retry}><FiRefreshCw /> Coba lagi</button></div>}
+      {loading ? <Loading label="Memuat harga komoditas..." /> : error ? null : prices.length ? (
+        <div className="table-scroll"><table>
+          <thead><tr><th>KOMODITAS</th><th>HARGA REFERENSI</th><th>RENTANG HARGA</th><th>PERUBAHAN HARIAN</th><th>SATUAN</th></tr></thead>
+          <tbody>{prices.map((row) => {
+            const change = Number(row.changePercent)
+            const TrendIcon = row.trend === 'up' ? FiArrowUpRight : row.trend === 'down' ? FiArrowDownRight : FiMinus
+            const changeClass = row.trend === 'up' ? 'money-positive' : row.trend === 'down' ? 'money-negative' : ''
+            const trendLabel = row.trend === 'up' ? 'Naik' : row.trend === 'down' ? 'Turun' : 'Stabil'
+            return <tr key={row.id}>
+              <td><strong>{row.commodity}</strong></td>
+              <td><strong>{currency.format(row.price)}</strong></td>
+              <td>{currency.format(row.minPrice)} – {currency.format(row.maxPrice)}</td>
+              <td className={changeClass}><TrendIcon /> {trendLabel} ({change > 0 ? '+' : ''}{number.format(change)}%)</td>
+              <td>per {row.unit}</td>
+            </tr>
+          })}</tbody>
+        </table></div>
+      ) : <Empty title="Harga belum tersedia" text="Belum ada harga komoditas yang dapat ditampilkan." />}
+    </section>
+    <div className="market-footnote"><FiMapPin /><span>Harga dinyatakan dalam Rupiah per kilogram. Harga transaksi dapat berbeda menurut lokasi, kualitas, dan waktu.</span></div>
   </>
 }
 
@@ -403,22 +520,5 @@ export function Notifications() {
       <article className="notification-card"><span className="notification-icon notification-icon-blue"><FiCloudRain /></span><div><span className="notification-time">SARAN BUDIDAYA</span><h2>Cek prakiraan sebelum memulai aktivitas di lahan</h2><p>Perubahan cuaca dapat memengaruhi jadwal pemupukan, pengairan, dan panen.</p><Link className="text-link" to="/app/weather">Buka prakiraan <FiArrowRight /></Link></div></article>
       <article className="notification-card"><span className="notification-icon notification-icon-yellow"><FiActivity /></span><div><span className="notification-time">LOGBOOK</span><h2>{activities.length ? 'Aktivitas terakhir Anda' : 'Lengkapi catatan aktivitas secara berkala'}</h2><p>{activities.length ? `${activityTitle(activities[0].type)}${activities[0].farm?.name ? ` · ${activities[0].farm.name}` : ''} dicatat pada ${dateLabel(activities[0].date)}.` : 'Catatan yang konsisten membantu Anda mengevaluasi hasil setiap musim.'}</p><Link className="text-link" to="/app/activities">Buka logbook <FiArrowRight /></Link></div></article>
     </div>
-  </>
-}
-
-export function AdminDashboard() {
-  const [status, setStatus] = useState({ loading: true, message: '', error: '' })
-  const [retry, setRetry] = useState(0)
-  useEffect(() => {
-    let active = true
-    api.get('/admin/ping')
-      .then(({ data }) => { if (active) setStatus({ loading: false, message: data.message, error: '' }) })
-      .catch((error) => { if (active) setStatus({ loading: false, message: '', error: getErrorMessage(error) }) })
-    return () => { active = false }
-  }, [retry])
-  return <>
-    <Heading eyebrow="ADMINISTRATOR" title="Dashboard admin" description="Ringkasan status akses administratif TerraSmart." />
-    {status.loading ? <section className="panel"><Loading label="Memvalidasi akses administrator..." /></section> : status.error ? <Notice>{status.error} <button className="button button-quiet" onClick={() => setRetry((current) => current + 1)}><FiRefreshCw /> Coba lagi</button></Notice> : <section className="admin-welcome"><div className="admin-welcome-icon"><FiCheck /></div><span className="eyebrow eyebrow-light">AKSES TERVERIFIKASI</span><h2>{status.message}</h2><p>Autentikasi dan otorisasi admin aktif.</p><span className="admin-status-pill"><span /> API tersambung</span></section>}
-    <section className="panel admin-limit-panel"><span className="eyebrow">KETERSEDIAAN DATA</span><h2>Fitur dashboard admin</h2><p>Endpoint backend saat ini hanya menyediakan pemeriksaan akses admin (<code>/api/admin/ping</code>). Statistik pengguna, lahan, dan aktivitas belum tersedia; karena itu dashboard tidak menampilkan angka yang tidak bersumber dari API.</p></section>
   </>
 }

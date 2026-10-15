@@ -3,6 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import connectDB from './db/config.js'
 import routes from './routes/index.js'
+import adminRoutes from './routes/admin.js'
 import { notFound, errorHandler } from './middleware/error.js'
 
 const app = express()
@@ -13,6 +14,7 @@ app.get('/', (req, res) => {
   res.json({ message: 'TerraSmart API is running' })
 })
 
+app.use('/api/admin', adminRoutes)
 app.use('/api', routes)
 app.use(notFound)
 app.use(errorHandler)

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
+import ErrorBoundary from './components/ErrorBoundary'
 import { AuthProvider } from './context/AuthContext'
 import { useAuth } from './context/useAuth'
 import './App.css'
@@ -13,7 +14,10 @@ const Finance = lazy(() => import('./pages/FarmerPages').then((pages) => ({ defa
 const WeatherCalendar = lazy(() => import('./pages/FarmerPages').then((pages) => ({ default: pages.WeatherCalendar })))
 const Market = lazy(() => import('./pages/FarmerPages').then((pages) => ({ default: pages.Market })))
 const Notifications = lazy(() => import('./pages/FarmerPages').then((pages) => ({ default: pages.Notifications })))
-const AdminDashboard = lazy(() => import('./pages/FarmerPages').then((pages) => ({ default: pages.AdminDashboard })))
+const AdminOverview = lazy(() => import('./pages/AdminPages').then((pages) => ({ default: pages.AdminOverview })))
+const AdminUsers = lazy(() => import('./pages/AdminPages').then((pages) => ({ default: pages.AdminUsers })))
+const AdminFarms = lazy(() => import('./pages/AdminPages').then((pages) => ({ default: pages.AdminFarms })))
+const AdminActivities = lazy(() => import('./pages/AdminPages').then((pages) => ({ default: pages.AdminActivities })))
 
 function RouteGuard({ role, children }) {
   const { user, loading } = useAuth()
@@ -41,12 +45,15 @@ function AppRoutes() {
           <Route path="farms" element={<FarmManagement />} />
           <Route path="activities" element={<ActivityLog />} />
           <Route path="finance" element={<Finance />} />
-          <Route path="weather" element={<WeatherCalendar />} />
+          <Route path="weather" element={<ErrorBoundary title="Halaman cuaca mengalami gangguan" description="Data cuaca sementara tidak dapat ditampilkan. Muat ulang halaman atau coba kembali beberapa saat lagi."><WeatherCalendar /></ErrorBoundary>} />
           <Route path="market" element={<Market />} />
           <Route path="notifications" element={<Notifications />} />
         </Route>
         <Route path="/admin" element={<RouteGuard role="admin"><AppLayout /></RouteGuard>}>
-          <Route index element={<AdminDashboard />} />
+          <Route index element={<AdminOverview />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="farms" element={<AdminFarms />} />
+          <Route path="activities" element={<AdminActivities />} />
         </Route>
         <Route path="*" element={<RoleHome />} />
       </Routes>
@@ -55,5 +62,5 @@ function AppRoutes() {
 }
 
 export default function App() {
-  return <AuthProvider><AppRoutes /></AuthProvider>
+  return <AuthProvider><ErrorBoundary><AppRoutes /></ErrorBoundary></AuthProvider>
 }
